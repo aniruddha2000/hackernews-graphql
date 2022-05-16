@@ -2,67 +2,97 @@ package users
 
 import (
 	"database/sql"
-	"log"
+	"errors"
 
-	"github.com/aniruddha2000/hackernews/internal/pkg/db/migrations/mysql"
+	database "github.com/aniruddha2000/hackernews/internal/pkg/db/migrations/mysql"
 	"golang.org/x/crypto/bcrypt"
+
+	"log"
 )
 
-type Users struct {
+type User struct {
 	ID       string `json:"id"`
-	Username string `json:"username"`
+	Username string `json:"name"`
 	Password string `json:"password"`
 }
 
-func (user *Users) Create() int64 {
-	statement, err := mysql.Db.Prepare("INSERT INTO Users(Username, Password) VALUES(?,?)")
+func (user *User) Create() error {
+	statement, err := database.Db.Prepare("INSERT INTO Users(Username,Password) VALUES(?,?)")
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Print(statement)
 	defer statement.Close()
 
-	hashedPassword, err := HashedPassword(user.Password)
-	if err != nil {
-		log.Fatal(err)
+	if statement.QueryRow().Err() != sql.ErrNoRows {
+		return errors.New("username exists")
 	}
-	res, err := statement.Exec(user.Username, hashedPassword)
+
+	statement, err = database.Db.Prepare("INSERT INTO Users(Username,Password) VALUES(?,?)")
+	print(statement)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	insertID, err := res.LastInsertId()
+	hashedPassword, err := HashPassword(user.Password)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Print("User Created")
-	return insertID
+
+	_, err = statement.Exec(user.Username, hashedPassword)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return nil
 }
 
-func HashedPassword(password string) (string, error) {
+//HashPassword hashes given password
+func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	return string(bytes), err
 }
 
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
-}
-
-func GetUserIdByUsername(username string) (int64, error) {
-	statement, err := mysql.Db.Prepare("SELECT ID FROM Users WHERE Username=?")
+//GetUserIdByUsername check if a user exists in database by given username
+func GetUserIdByUsername(username string) (int, error) {
+	statement, err := database.Db.Prepare("select ID from Users WHERE Username = ?")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer statement.Close()
+	row := statement.QueryRow(username)
 
-	var ID int64
-	err = statement.QueryRow(username).Scan(&ID)
+	var Id int
+	err = row.Scan(&Id)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			log.Printf("No Rows Selected : %v", err)
+			log.Print(err)
 		}
 		return 0, err
 	}
-	return ID, nil
+
+	return Id, nil
+}
+
+func (user *User) Authenticate() bool {
+	statement, err := database.Db.Prepare("select Password from Users WHERE Username = ?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	row := statement.QueryRow(user.Username)
+
+	var hashedPassword string
+	err = row.Scan(&hashedPassword)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	return CheckPasswordHash(user.Password, hashedPassword)
+}
+
+//CheckPassword hash compares raw password with it's hashed values
+func CheckPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 }
