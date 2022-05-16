@@ -7,34 +7,41 @@ import (
 	"github.com/aniruddha2000/hackernews/internal/users"
 )
 
-type Links struct {
+type Link struct {
 	ID      string
 	Title   string
 	Address string
-	User    *users.Users
+	User    *users.User
 }
 
-func (link Links) Save() int64 {
-	stmt, err := database.Db.Prepare("INSERT INTO Links(Title, Address) VALUES(?,?)")
+func (link *Link) Save() int64 {
+	stmt, err := database.Db.Prepare("INSERT INTO Links(Title,Address, UserID) VALUES(?,?,?)")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	res, err := stmt.Exec(link.Title, link.Address)
+	res, err := stmt.Exec(link.Title, link.Address, link.User.ID)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		log.Fatalf("Err: %v", err)
+		log.Fatal("Error:", err.Error())
 	}
-	log.Print("Row inserted")
+
+	log.Print("Row inserted!")
 	return id
 }
 
-func GetAll() (links []Links) {
-	stmt, err := database.Db.Prepare("SELECT ID, Title, Address FROM Links")
+func GetAll() []Link {
+	const query = `
+	SELECT L.ID, L.Title, L.Address, L.UserID, U.Username
+	FROM Links L
+	INNER JOIN Users U on L.UserID = U.ID
+	`
+
+	stmt, err := database.Db.Prepare(query)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,11 +53,21 @@ func GetAll() (links []Links) {
 	}
 	defer rows.Close()
 
+	var (
+		links    []Link
+		username string
+		id       string
+	)
+
 	for rows.Next() {
-		var link Links
-		err = rows.Scan(&link.ID, &link.Title, &link.Address)
+		var link Link
+		err := rows.Scan(&link.ID, &link.Title, &link.Address, &id, &username)
 		if err != nil {
 			log.Fatal(err)
+		}
+		link.User = &users.User{
+			ID:       id,
+			Username: username,
 		}
 		links = append(links, link)
 	}
@@ -59,57 +76,4 @@ func GetAll() (links []Links) {
 		log.Fatal(err)
 	}
 	return links
-}
-
-func Get(id string) Links {
-	var link Links
-	stmt, err := database.Db.Prepare("SELECT ID, Title, Address FROM Links WHERE ID=?")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stmt.Close()
-
-	err = stmt.QueryRow(id).Scan(&link.ID, &link.Title, &link.Address)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return link
-}
-
-func (link Links) Update(id string) int64 {
-	stmt, err := database.Db.Prepare("UPDATE Links SET Title=? , Address=? WHERE ID=?")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stmt.Close()
-
-	res, err := stmt.Exec(link.Title, link.Address, id)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return rowsAffected
-}
-
-func Delete(id string) int64 {
-	stmt, err := database.Db.Prepare("DELETE FROM Links WHERE ID=?")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stmt.Close()
-
-	res, err := stmt.Exec(id)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		log.Fatal(err)
-	}
-	return rowsAffected
 }
