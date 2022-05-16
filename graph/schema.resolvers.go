@@ -56,29 +56,50 @@ func (r *mutationResolver) CreateUser(ctx context.Context, input model.NewUser) 
 }
 
 func (r *mutationResolver) UpdateLink(ctx context.Context, id string, input model.NewLink) (*model.Link, error) {
-	// link := links.Link{
-	// 	Title:   input.Title,
-	// 	Address: input.Address,
-	// }
-	// rowsAffected := link.Update(id)
-	// if rowsAffected == 0 {
-	// 	return nil, errors.New("zero rows affected")
-	// }
-	// return &model.Link{
-	// 	ID:      id,
-	// 	Title:   link.Title,
-	// 	Address: link.Address,
-	// }, nil
-	panic(fmt.Errorf("not implemented"))
+	user := auth.ForContext(ctx)
+	if user == nil {
+		return &model.Link{}, errors.New("access denied")
+	}
+
+	link := links.Link{
+		Title:   input.Title,
+		Address: input.Address,
+		User:    user,
+	}
+	rowsAffected, err := link.Update(id)
+	if err != nil {
+		return &model.Link{}, err
+	}
+
+	if rowsAffected == 0 {
+		return nil, errors.New("zero rows affected")
+	}
+
+	return &model.Link{
+		ID:      id,
+		Title:   link.Title,
+		Address: link.Address,
+		User: &model.User{
+			ID:   user.ID,
+			Name: user.Username,
+		},
+	}, nil
 }
 
 func (r *mutationResolver) DeleteLink(ctx context.Context, id string) (string, error) {
-	// rowsAffected := links.Delete(id)
-	// if rowsAffected == 0 {
-	// 	return "", errors.New("zero rows affected")
-	// }
-	// return fmt.Sprintf("%v rows affected", rowsAffected), nil
-	panic(fmt.Errorf("not implemented"))
+	user := auth.ForContext(ctx)
+	if user == nil {
+		return "", errors.New("access denied")
+	}
+
+	rowsAffected, err := links.Delete(id, user.Username)
+	if err != nil {
+		return "", err
+	}
+	if rowsAffected == 0 {
+		return "", errors.New("zero rows affected")
+	}
+	return fmt.Sprintf("%v rows deleted", rowsAffected), nil
 }
 
 func (r *mutationResolver) Login(ctx context.Context, input model.Login) (string, error) {
@@ -115,19 +136,30 @@ func (r *queryResolver) Links(ctx context.Context) ([]*model.Link, error) {
 
 	allLinks := links.GetAll()
 	for _, link := range allLinks {
-		result = append(result, &model.Link{ID: link.ID, Title: link.Title, Address: link.Address})
+		graphqlUser := &model.User{
+			ID:   link.User.ID,
+			Name: link.User.Username,
+		}
+		result = append(result, &model.Link{ID: link.ID, Title: link.Title, Address: link.Address, User: graphqlUser})
 	}
 	return result, nil
 }
 
 func (r *queryResolver) Link(ctx context.Context, id string) (*model.Link, error) {
-	// link := links.Get(id)
-	// return &model.Link{
-	// 	ID:      link.ID,
-	// 	Title:   link.Title,
-	// 	Address: link.Address,
-	// }, nil
-	panic(fmt.Errorf("not implemented"))
+	user := auth.ForContext(ctx)
+	if user == nil {
+		return &model.Link{}, errors.New("access denied")
+	}
+
+	link, err := links.Get(id, user.Username)
+	if err != nil {
+		return &model.Link{}, err
+	}
+	return &model.Link{
+		ID:      link.ID,
+		Title:   link.Title,
+		Address: link.Address,
+	}, nil
 }
 
 // Mutation returns generated.MutationResolver implementation.
