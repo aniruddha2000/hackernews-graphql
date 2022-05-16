@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/aniruddha2000/hackernews/internal/auth"
-	"github.com/aniruddha2000/hackernews/internal/pkg/db/migrations/mysql"
+	database "github.com/aniruddha2000/hackernews/internal/pkg/db/migrations/mysql"
 	"github.com/go-chi/chi"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -27,14 +27,14 @@ func main() {
 
 	router.Use(auth.Middleware())
 
-	mysql.InitDB()
-	mysql.Migrate()
+	database.InitDB()
+	defer database.CloseDB()
+	database.Migrate()
 
-	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
-
-	http.Handle("/", playground.Handler("GraphQL playground", "/query"))
-	http.Handle("/query", srv)
+	server := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: &graph.Resolver{}}))
+	router.Handle("/", playground.Handler("GraphQL playground", "/query"))
+	router.Handle("/query", server)
 
 	log.Printf("connect to http://localhost:%s/ for GraphQL playground", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(":"+port, router))
 }
