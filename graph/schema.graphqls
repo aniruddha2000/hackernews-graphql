@@ -40,6 +40,5 @@ type Mutation {
   updateLink(id: ID!, input: NewLink!): Link!
   deleteLink(id: ID!): String!
   login(input: Login!): String!
-  # we'll talk about this in authentication section
   refreshToken(input: RefreshTokenInput!): String!
 }
