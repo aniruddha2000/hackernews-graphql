@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -9,45 +10,52 @@ import (
 	"github.com/aniruddha2000/hackernews/pkg/jwt"
 )
 
-type ContextKey struct {
+var userCtxKey = &contextKey{"user"}
+
+type contextKey struct {
 	name string
 }
-
-var usrCtxKey = &ContextKey{"user"}
 
 func Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
+			log.Print(header)
 
+			// Allow unauthenticated users in
 			if header == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
 
+			//validate jwt token
 			tokenStr := header
 			username, err := jwt.ParseToken(tokenStr)
 			if err != nil {
-				http.Error(w, "Invalid Token", http.StatusForbidden)
+				http.Error(w, "Invalid token", http.StatusForbidden)
 				return
 			}
 
-			user := users.Users{Username: username}
-			id, err := users.GetUserIdByUsername(user.Username)
+			// create user and check if user exists in db
+			user := users.User{Username: username}
+			id, err := users.GetUserIdByUsername(username)
 			if err != nil {
 				next.ServeHTTP(w, r)
 				return
 			}
+			user.ID = strconv.Itoa(id)
+			// put it in context
+			ctx := context.WithValue(r.Context(), userCtxKey, &user)
 
-			user.ID = strconv.Itoa(int(id))
-			ctx := context.WithValue(r.Context(), usrCtxKey, &user)
+			// and call the next with our new context
 			r = r.WithContext(ctx)
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func ForContext(ctx context.Context) *users.Users {
-	raw, _ := ctx.Value(usrCtxKey).(*users.Users)
+// ForContext finds the user from the context. REQUIRES Middleware to have run.
+func ForContext(ctx context.Context) *users.User {
+	raw, _ := ctx.Value(userCtxKey).(*users.User)
 	return raw
 }
